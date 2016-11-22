@@ -12,6 +12,8 @@ import (
 
 const DebugParser = false
 
+type AssetLoader func(name string) ([]byte, error)
+
 type Parser struct {
 	scanner      *scanner
 	filename     string
@@ -19,6 +21,7 @@ type Parser struct {
 	namedBlocks  map[string]*NamedBlock
 	parent       *Parser
 	result       *Block
+	assetLoader  AssetLoader
 }
 
 func newParser(rdr io.Reader) *Parser {
@@ -41,6 +44,19 @@ func FileParser(filename string) (*Parser, error) {
 
 	parser := newParser(bytes.NewReader(data))
 	parser.filename = filename
+	return parser, nil
+}
+
+func AssetParser(filename string, assetLoader AssetLoader) (*Parser, error) {
+	data, err := assetLoader(filename)
+
+	if err != nil {
+		return nil, err
+	}
+
+	parser := newParser(bytes.NewReader(data))
+	parser.filename = filename
+	parser.assetLoader = assetLoader
 	return parser, nil
 }
 
@@ -137,7 +153,14 @@ func (p *Parser) parseRelativeFile(filename string) *Parser {
 		filename = filename + ".jade"
 	}
 
-	parser, err := FileParser(filename)
+	var parser *Parser
+	var err error
+	if p.assetLoader == nil {
+		parser, err = FileParser(filename)
+	} else {
+		parser, err = AssetParser(filename, p.assetLoader)
+	}
+
 	if err != nil {
 		panic("Unable to read " + filename + ", Error: " + string(err.Error()))
 	}

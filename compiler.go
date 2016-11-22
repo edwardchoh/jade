@@ -5,7 +5,7 @@ import (
 	"container/list"
 	"errors"
 	"fmt"
-	"github.com/go-floki/jade/parser"
+	"github.com/edwardchoh/jade/parser"
 	"go/ast"
 	gp "go/parser"
 	gt "go/token"
@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"path"
 	"reflect"
 	"regexp"
 	"sort"
@@ -175,6 +176,66 @@ func CompileDir(dirname string, dopt DirOptions, opt Options) (map[string]*templ
 	}
 
 	return compiled, nil
+}
+
+// Parses and compiles the contents of supplied files, with options.
+// Returns a map of a template identifier (key) to a Go Template instance.
+// Ex: if the dirname="templates/" had a file "index.jade" the key would be "index"
+// If option for recursive is True, this parses every file of relevant extension
+// in all subdirectories. The key then is the path e.g: "layouts/layout"
+func CompileAssets(files []string, assetLoader parser.AssetLoader, opt Options) (map[string]*template.Template, error) {
+	compiled := make(map[string]*template.Template)
+	for _, file := range files {
+		// filename is for example "index.jade"
+		filename := path.Base(file)
+		fileext := filepath.Ext(filename)
+
+		// Compile the file and add to mapping
+		fullpath := path.Clean(filename)
+		tmpl, err := CompileAsset(fullpath, assetLoader, opt)
+		if err != nil {
+			return nil, err
+		}
+		// Strip extension
+		key := filename[0 : len(filename)-len(fileext)]
+		compiled[key] = tmpl
+	}
+
+	return compiled, nil
+}
+
+// Parses and compiles the contents of supplied filename. Returns corresponding Go Template (html/templates) instance.
+// Necessary runtime functions will be injected and the template will be ready to be executed.
+func CompileAsset(filename string, assetLoader parser.AssetLoader, options Options) (*template.Template, error) {
+
+	comp := New()
+	comp.Options = options
+
+	err := comp.ParseAsset(filename, assetLoader)
+	if err != nil {
+		return nil, err
+	}
+
+	return comp.Compile()
+}
+
+// Parse the jade template file in given path
+func (c *Compiler) ParseAsset(filename string, assetLoader parser.AssetLoader) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = errors.New(r.(string))
+		}
+	}()
+
+	parser, err := parser.AssetParser(filename, assetLoader)
+
+	if err != nil {
+		return
+	}
+
+	c.node = parser.Parse()
+	c.filename = filename
+	return
 }
 
 // Parse given raw jade template string.
